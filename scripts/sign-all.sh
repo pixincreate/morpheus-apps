@@ -86,7 +86,11 @@ echo
 echo "Verifying signatures:"
 for f in "$OUT_DIR"/*.apk; do
   echo "== $(basename "$f") =="
-  "$BT/apksigner" verify --print-certs "$f" | grep -E 'certificate SHA-256 digest|Verified using' || true
+  if ! out="$("$BT/apksigner" verify --print-certs "$f" 2>&1)"; then
+    echo "$out" >&2
+    fail "apksigner rejected $(basename "$f") - do not install this APK."
+  fi
+  grep -E 'certificate SHA-256 digest|Verified using' <<<"$out" || true
 done
 
 echo
