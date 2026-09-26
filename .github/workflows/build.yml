@@ -69,10 +69,34 @@ jobs:
         with:
           packages: "build-tools;37.0.0"
 
+      - name: Start FlareSolverr (optional)
+        # Runs only when the repository variable FLARESOLVERR_URL is set, for
+        # example to http://localhost:8191. The private vendor release stays the
+        # primary source; FlareSolverr only feeds the fetch fallback. Cloudflare
+        # binds cf_clearance to the client IP and user agent, so the solve and
+        # the download must leave from one public IP. continue-on-error keeps a
+        # broken optional step from failing the primary path.
+        if: ${{ vars.FLARESOLVERR_URL != '' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name flaresolverr -p localhost:8191:8191 \
+            ghcr.io/flaresolverr/flaresolverr:latest
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:8191/health >/dev/null 2>&1; then
+              echo "FlareSolverr is ready on http://localhost:8191"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::warning::FlareSolverr did not become ready on http://localhost:8191."
+
       - name: Fetch vendor APKs
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLARESOLVERR_URL: ${{ vars.FLARESOLVERR_URL }}
         run: |
           set -euo pipefail
           app="${{ matrix.app.name }}"

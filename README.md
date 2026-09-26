@@ -18,7 +18,8 @@ For each app it does this:
 
 1. Downloads the untouched vendor APKs from the private `vendor/<app>/<version>`
    release in this repository.
-   `scripts/fetch-vendor-apks.sh` is the web fallback for APKPure and APKMirror.
+   `scripts/fetch-vendor-apks.sh` is the web fallback for the APKPure direct
+   download endpoints.
 2. Verifies the APKs with `scripts/verify-vendor-apks.sh`:
    SHA-256 against the committed `vendor/SHA256SUMS` when present, and the signing
    certificate against the pins in `vendor-certs.json`.
@@ -99,9 +100,9 @@ gh release create vendor/ather/13.5.0 -R pixincreate/morpheus-apps \
 ```
 
 Use the same shape for Nothing X with tag `vendor/nothingx/3.8.0`.
-For an APKMirror `.apkm` bundle, `unzip` it first and rename `base.apk` to the
-package name.
-For an APKPure `.xapk`, `unzip` it and keep the APK files it contains.
+For an APKPure `.xapk`, `unzip` it, rename `base.apk` to the package name, and
+keep every config split it contains.
+`scripts/fetch-vendor-apks.sh` does the same rename and split handling.
 
 ### Checksums
 
@@ -153,10 +154,42 @@ adb install-multiple builds/nothingx-*.apk
 
 ## Web fallback for vendor APKs
 
-`scripts/fetch-vendor-apks.sh` downloads Ather from APKPure and Nothing X from
-APKMirror for the versions the patch bundle targets.
-Both sites sit behind Cloudflare and answer plain curl with a challenge page, so the
-script gives up with a clear message rather than pretending to work.
+`scripts/fetch-vendor-apks.sh` downloads both apps from the APKPure direct
+endpoints for the versions the patch bundle targets:
+
+```text
+https://d.apkpure.com/b/XAPK/<package>?versionCode=<code>&nc=<abi>&sv=<sdk>
+```
+
+Positional arguments override the defaults table:
+
+```bash
+scripts/fetch-vendor-apks.sh ather 13.5.0 321 arm64-v8a 32
+scripts/fetch-vendor-apks.sh nothingx 3.8.0 3080004 arm64-v8a 32
+scripts/fetch-vendor-apks.sh all
+```
+
+The endpoints work in a browser but sit behind Cloudflare, which answers curl
+with HTTP 403 and a challenge page even when the request carries browser-like
+headers.
+The script then gives up with a clear message, or it uses FlareSolverr when you
+provide one.
+Set the repository variable to enable the fallback:
+
+```bash
+gh variable set FLARESOLVERR_URL --body http://localhost:8191 -R pixincreate/morpheus-apps
+```
+
+When the variable is set, the workflow starts a FlareSolverr container on the
+runner, and the script requests the challenge page through it, takes the
+`cf_clearance` cookie, and downloads the XAPK directly with that cookie and the
+matching user agent.
+FlareSolverr is optional; never make it mandatory.
+Cloudflare binds `cf_clearance` to the client IP and user agent, so the
+FlareSolverr instance and the download must leave from one public IP.
+An external FlareSolverr that shares the runner's egress IP also works; point
+the variable at its URL.
+
 The reliable path is always the private vendor release above.
 A download that gets through is not trusted on its own: `vendor/SHA256SUMS` and
 `vendor-certs.json` decide whether it is the right file.
