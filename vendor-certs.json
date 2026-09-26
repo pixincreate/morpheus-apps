@@ -1,0 +1,12 @@
+{
+  "_comment": "Signing-certificate pins for the untouched vendor APKs. scripts/verify-vendor-apks.sh runs apksigner verify --print-certs on every APK in vendor/<app>/ and compares the first certificate digest against these values. An empty pin prints the observed certificate and skips the check. Read the values with: apksigner verify --print-certs vendor/<app>/<apk>",
+  "com.athermobileapp": {
+    "sha1": "385607f06926ced3c0630914bc6b78ac2ba99211",
+    "sha256": "c98a7b93ed7bf9367f9d9a514a0ee36732242b2e5a55c05249121566ac664b3f"
+  },
+  "com.nothing.smartcenter": {
+    "sha1": "",
+    "sha256": "",
+    "_comment": "Empty on purpose. The maintainer's pulled Nothing X APK is gone and the phone is disconnected. The workflow prints the certificate it sees and skips this check until you fill in both values. APKMirror reports SHA-1 54f2dc06e05e44c9a5e54068a46a21932e0ff5a5 and SHA-256 38183efa71088bc59befeff4a691a26b723a384966ee1231c5ca234185cc3487 for the 3.8.0 APK bundle, and APKPure reports the same SHA-1 - confirm both against your own vendor APK before pinning them."
+  }
+}

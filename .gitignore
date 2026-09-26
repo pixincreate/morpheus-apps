@@ -1,0 +1,10 @@
+build/
+bundle/
+dist/
+out/
+*.jks
+*.keystore
+vendor/**/*.apk
+vendor/**/*.apkm
+vendor/**/*.xapk
+.DS_Store

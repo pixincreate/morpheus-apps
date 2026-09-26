@@ -1,0 +1,217 @@
+name: Build
+
+# Build patched, signed APKs from the newest public Morphe patch bundle and
+# publish them as one rolling private release tagged "all".
+#
+# This repository is private and must stay private. It holds the signing key in
+# an encrypted secret and the untouched vendor APKs as private release assets.
+# Publishing the outputs would redistribute patched copies of the vendor apps,
+# so keep the repository and every release private.
+#
+# Required secrets (see README.md for the gh secret set commands):
+#   KEYSTORE_BASE64     base64 of the signing keystore
+#   KEYSTORE_PASSWORD   keystore password
+#   KEY_PASSWORD        key password
+#   KEY_ALIAS           key alias
+#
+# GITHUB_TOKEN is automatic. It reads this repository's private vendor releases
+# and the public patch bundle release, and writes the rolling release.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rolling-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build-${{ matrix.app.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      # One app failing must not lose the other app's build.
+      fail-fast: false
+      matrix:
+        app:
+          - name: ather
+            package: com.athermobileapp
+            version: "13.5.0"
+            # Explicit: the maintainer's untouched APKs are named config.*.apk.
+            splits: config.arm64_v8a config.en config.mdpi
+          - name: nothingx
+            package: com.nothing.smartcenter
+            version: "3.8.0"
+            # Nothing X ships a base APK plus many config splits under names the
+            # vendor bundle decides. scripts/build.sh discovers and signs every
+            # *.apk in vendor/nothingx/ that is not the base APK.
+            splits: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up JDK
+        # The Morphe CLI and apksigner run on this JDK; JAVA_HOME points at it.
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4.0.4
+        with:
+          packages: "build-tools;37.0.0"
+
+      - name: Fetch vendor APKs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          app="${{ matrix.app.name }}"
+          tag="vendor/$app/${{ matrix.app.version }}"
+          mkdir -p "vendor/$app"
+          if gh release download "$tag" -p '*.apk' -D "vendor/$app" --clobber; then
+            echo "Fetched the vendor APKs from the private release $tag"
+          else
+            echo "::warning::The private release $tag has no APK assets. Falling back to scripts/fetch-vendor-apks.sh."
+            bash scripts/fetch-vendor-apks.sh "$app" "${{ matrix.app.version }}"
+          fi
+
+      - name: Verify vendor APKs
+        shell: bash
+        env:
+          APP: ${{ matrix.app.name }}
+          APP_PACKAGE: ${{ matrix.app.package }}
+        run: bash scripts/verify-vendor-apks.sh
+
+      - name: Download the newest patch bundle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p bundle
+          gh release download --repo pixincreate/morpheus --pattern 'patches-*.mpp' -D bundle --clobber
+          ls -l bundle
+
+      - name: Decode the signing keystore
+        id: keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }} # keywatch:ignore
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }} # keywatch:ignore
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing. Set them with the gh secret set commands in README.md."
+            exit 1
+          fi
+          ks="$(mktemp)"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$ks"
+          chmod 600 "$ks"
+          echo "path=$ks" >> "$GITHUB_OUTPUT"
+
+      - name: Build and sign
+        shell: bash
+        env:
+          APP_NAME: ${{ matrix.app.name }}
+          APP_PACKAGE: ${{ matrix.app.package }}
+          SPLITS: ${{ matrix.app.splits }}
+          KS: ${{ steps.keystore.outputs.path }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: bash scripts/build.sh
+
+      - name: Stage the signed APKs with deterministic names
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for f in out/signed/*.apk; do
+            cp "$f" "dist/${{ matrix.app.name }}-$(basename "$f")"
+          done
+          ls -l dist
+
+      - name: Upload the signed APKs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: signed-${{ matrix.app.name }}
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Delete the signing keystore
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ks="${{ steps.keystore.outputs.path }}"
+          if [ -n "$ks" ] && [ -f "$ks" ]; then
+            rm -f "$ks"
+          fi
+
+  publish:
+    name: publish-all
+    needs: build
+    # Publish whatever signed APKs the matrix produced, even when one app failed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Download the signed APKs
+        uses: actions/download-artifact@v8.0.1
+        continue-on-error: true
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check the signed APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find dist -maxdepth 1 -name '*.apk' | wc -l | tr -d ' ')"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No signed APKs were produced, so there is nothing to publish."
+            exit 1
+          fi
+          ls -l dist
+
+      - name: Publish the rolling release
+        uses: ncipollo/release-action@v1.21.0
+        with:
+          tag: all
+          name: Morpheus builds
+          body: |
+            Rolling release of patched, signed Morpheus APKs.
+
+            Assets are named `<app>-<part>.apk`. Install a split set with:
+
+                adb install-multiple ather-base.apk ather-config.arm64_v8a.apk ather-config.en.apk ather-config.mdpi.apk
+
+            Nothing X ships a base APK plus many config splits. Pass every
+            `nothingx-*.apk` file to `adb install-multiple`.
+
+            This repository is private. Do not publish these APKs.
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          artifacts: "dist/*.apk"
+          artifactErrorsFailBuild: true
