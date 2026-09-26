@@ -4,7 +4,7 @@
 # Two gates:
 #   1. Checksums. When vendor/SHA256SUMS exists, every entry it lists for this
 #      app must match the file on disk. Generate or refresh it with:
-#        (cd vendor && shasum -a 256 ather/*.apk > SHA256SUMS)
+#        (cd vendor && shasum -a 256 ather/*.apk nothingx/*.apk > SHA256SUMS)
 #   2. Certificates. vendor-certs.json pins the signing certificate per package.
 #      Every APK in vendor/<APP>/ must carry the pinned SHA-1 and SHA-256
 #      certificate. An empty pin prints the certificate that apksigner reports
@@ -88,7 +88,7 @@ if [ -f "$SUMS_FILE" ]; then
     echo "checksum ok: $rel"
   done <"$SUMS_FILE"
   if [ "$listed" -eq 0 ]; then
-    warn "vendor/SHA256SUMS exists but lists no files for $APP; skipping the checksum gate."
+    fail "vendor/SHA256SUMS lists no files for $APP, so the checksum gate would accept any APK. Add the entries (see README.md)."
   fi
 else
   warn "vendor/SHA256SUMS is not present; skipping the checksum gate."
