@@ -1,19 +1,22 @@
 # morpheus-apps
 
 Private build repository for [pixincreate/morpheus](https://github.com/pixincreate/morpheus).
-It takes the newest public patch bundle, applies it to untouched vendor APKs, signs
-the result, and publishes everything as one rolling private release tagged `all`.
+It takes the newest public patch bundle, applies it to untouched vendor APKs, merges the
+split set into one APK, signs it, and publishes one versioned private release per app:
+`ather-<version>` and `nothingx-<version>`.
+Each release carries a single file, `morpheus-<app>-<version>.apk`, so
+[Obtainium](https://github.com/ImranR98/Obtainium) can detect and install the next build.
 
 This repository must stay private.
 It carries the signing key in an encrypted secret and the untouched vendor APKs as
 private release assets.
-Anyone who can read the rolling release can install patched builds that carry your
-signing key, so do not make the repository public and do not forward release assets.
+Anyone who can read a release can install patched builds that carry your signing key,
+so do not make the repository public and do not forward release assets.
 
 ## How a build runs
 
-The workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) runs nightly
-and on demand.
+The workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) runs weekly
+(Mondays 02:00 UTC) and on demand.
 For each app it does this:
 
 1. Downloads the untouched vendor APKs from the private `vendor/<app>/<version>`
@@ -26,19 +29,39 @@ For each app it does this:
    certificate against the pins in `vendor-certs.json`.
 3. Downloads the newest patch bundle from the public repository with
    `gh release download --repo pixincreate/morpheus --pattern 'patches-*.mpp'`.
-4. Applies the bundle to each base APK with `scripts/build.sh` and the Morphe CLI
+4. Applies the bundle to the base APK with `scripts/build.sh` and the Morphe CLI
    (`--unsigned --disable-purge`).
-5. Signs the patched base APK and every original config split with one key through
-   `scripts/sign-all.sh`.
+5. Merges the patched base APK and the original config splits into one standalone
+   APK with APKEditor, because a release must carry one file for Obtainium.
+6. Signs the merged APK with `scripts/sign-all.sh`.
    The workflow decodes `KEYSTORE_BASE64` to a temporary file with mode 600 and
    deletes it in an `always()` step.
-6. Publishes every signed APK to the rolling release tagged `all` with
-   `ncipollo/release-action` and `allowUpdates: true`.
-   Asset names are deterministic, for example `ather-base.apk`,
-   `ather-config.arm64_v8a.apk`, and `nothingx-base.apk`.
+7. Publishes the release `ather-13.5.0` with the asset
+   `morpheus-ather-13.5.0.apk` through `ncipollo/release-action`.
+   A rerun replaces the asset and the notes in the same release.
 
 The build matrix uses `fail-fast: false`, so one app failing does not lose the other
-app's signed APKs.
+app's APKs.
+
+## Obtainium
+
+Add one source per app.
+Point both at the same repository URL and separate them with the title filter.
+
+| Setting | Ather | Nothing X |
+| --- | --- | --- |
+| Repository URL | `https://github.com/pixincreate/morpheus-apps` | same |
+| Filter release titles by RegEx | `^Ather` | `^Nothing X` |
+| Version extraction RegEx | `(\d+\.\d+\.\d+)` | `(\d+\.\d+\.\d+)` |
+| Match group to use | `1` | `1` |
+| APK filter RegEx | `ather` | `nothingx` |
+| Include prereleases | off | off |
+
+The release title carries the version (`Ather 13.5.0`), and the version extraction
+reads it into the plain `13.5.0` shape that Obtainium compares.
+The title filter and the APK filter keep the other app's release out.
+A new released version makes Obtainium report an update, and every build is signed
+with the same key, so the update installs over the previous build.
 
 ## Required secrets
 
@@ -62,8 +85,16 @@ gh secret set KEY_ALIAS -R pixincreate/morpheus-apps --body <alias>
 Never commit a keystore or a password.
 The workflow fails with a clear `::error::` message when a secret is missing.
 
+## Bump an app version
+
+Edit the version in the build matrix in `.github/workflows/build.yml`, and refresh
+`vendor/SHA256SUMS` after uploading the new vendor APKs.
+The next run publishes a new release, for example `ather-13.5.1`, and Obtainium picks
+it up.
+
 ## Upload the vendor APKs
 
+The web fallback covers the common case, so the upload is optional.
 Create one private release per app and version, then attach the untouched APKs.
 The workflow downloads them with:
 
@@ -119,18 +150,15 @@ The workflow skips the checksum gate when the file is not present.
 
 ### Certificate pins
 
-`vendor-certs.json` pins the signing certificate per package.
-The workflow prints the certificate it sees and skips the check for a package with
-an empty pin.
-Ather is pinned.
-Nothing X is empty until you read the value from your own vendor APK:
+`vendor-certs.json` pins the signing certificate per package, and both packages are
+pinned.
+The workflow prints the certificate it sees and fails the run when a pin does not
+match.
+For a new app, read the values from your own vendor APK and add them:
 
 ```bash
 apksigner verify --print-certs vendor/nothingx/com.nothing.smartcenter.apk | grep 'certificate SHA-'
 ```
-
-Put both values in `vendor-certs.json` under `com.nothing.smartcenter`, then delete
-the comment that explains the empty pin.
 
 ## Run a build
 
@@ -139,20 +167,16 @@ gh workflow run build.yml -R pixincreate/morpheus-apps
 gh run list --workflow build.yml -R pixincreate/morpheus-apps
 ```
 
-The nightly schedule runs at 02:00 UTC.
+The weekly schedule runs on Mondays at 02:00 UTC.
 
 ## Install a build on the phone
 
 ```bash
-gh release download all -R pixincreate/morpheus-apps -D builds --clobber
-adb install-multiple builds/ather-*.apk
+gh release download ather-13.5.0 -R pixincreate/morpheus-apps -D builds --clobber
+adb install builds/morpheus-ather-13.5.0.apk
 ```
 
-For Nothing X pass every asset:
-
-```bash
-adb install-multiple builds/nothingx-*.apk
-```
+For Nothing X, use the tag `nothingx-3.8.0` and its asset.
 
 ## Web fallback for vendor APKs
 
@@ -219,9 +243,9 @@ A download that gets through is not trusted on its own: `vendor/SHA256SUMS` and
 
 | Path | Purpose |
 | --- | --- |
-| `.github/workflows/build.yml` | The build, verify, sign, and rolling-release workflow |
-| `scripts/build.sh` | Apply the patch bundle to one base APK with the Morphe CLI |
-| `scripts/sign-all.sh` | Align and sign the patched base plus every config split |
+| `.github/workflows/build.yml` | The build, verify, merge, sign, and release workflow |
+| `scripts/build.sh` | Apply the patch bundle, then merge the base APK with the config splits |
+| `scripts/sign-all.sh` | Align and sign the merged APK |
 | `scripts/verify-vendor-apks.sh` | Check checksums and certificate pins |
 | `scripts/fetch-vendor-apks.mjs` | Best-effort web fallback for the vendor APKs (patchright, headed) |
 | `vendor/SHA256SUMS` | SHA-256 of the vendor APKs, relative to `vendor/` |
