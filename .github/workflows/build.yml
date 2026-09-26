@@ -49,12 +49,14 @@ jobs:
             title: Ather
             package: com.athermobileapp
             version: "13.5.0"
+            version_code: "321"
             # Explicit: the maintainer's untouched APKs are named config.*.apk.
             splits: config.arm64_v8a config.en config.mdpi
           - name: nothingx
             title: Nothing X
             package: com.nothing.smartcenter
             version: "3.8.0"
+            version_code: "3080004"
             # Nothing X ships a base APK plus many config splits under names the
             # vendor bundle decides. scripts/build.sh discovers every *.apk in
             # vendor/nothingx/ that is not the base APK.
@@ -63,6 +65,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
+        with:
+          # No step pushes with git, so do not leave the write-scoped token in
+          # .git/config, where the patch and merge tools could read it.
+          persist-credentials: false
 
       - name: Set up JDK
         # The Morphe CLI, APKEditor and apksigner run on this JDK; JAVA_HOME
@@ -104,7 +110,8 @@ jobs:
             fi
             npm install --no-save --no-audit --no-fund patchright@1.63.0
             npx --yes patchright install chromium
-            xvfb-run -a node scripts/fetch-vendor-apks.mjs "$app"
+            xvfb-run -a node scripts/fetch-vendor-apks.mjs \
+              "$app" "${{ matrix.app.version }}" "${{ matrix.app.version_code }}"
           fi
 
       - name: Verify vendor APKs
@@ -123,6 +130,17 @@ jobs:
           mkdir -p bundle
           gh release download --repo pixincreate/morpheus --pattern 'patches-*.mpp' -D bundle --clobber
           ls -l bundle
+
+      - name: Build and merge
+        # No signing secret is in scope here. The patch bundle and APKEditor are
+        # third-party code, so do not run them next to the keystore or its
+        # passwords.
+        shell: bash
+        env:
+          APP_NAME: ${{ matrix.app.name }}
+          APP_PACKAGE: ${{ matrix.app.package }}
+          SPLITS: ${{ matrix.app.splits }}
+        run: bash scripts/build.sh
 
       - name: Decode the signing keystore
         id: keystore
@@ -149,17 +167,16 @@ jobs:
           chmod 600 "$ks"
           echo "path=$ks" >> "$GITHUB_OUTPUT"
 
-      - name: Build and sign
+      - name: Sign the merged APK
         shell: bash
         env:
-          APP_NAME: ${{ matrix.app.name }}
-          APP_PACKAGE: ${{ matrix.app.package }}
-          SPLITS: ${{ matrix.app.splits }}
+          APKS: build/merged-unsigned.apk
+          SIGNED_NAME: ${{ matrix.app.name }}
           KS: ${{ steps.keystore.outputs.path }}
           KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
           KS_KEY_PASS: ${{ secrets.KEY_PASSWORD }}
           KS_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: bash scripts/build.sh
+        run: bash scripts/sign-all.sh
 
       - name: Stage the signed APK
         # The merge must leave exactly one APK: a release carries one file so

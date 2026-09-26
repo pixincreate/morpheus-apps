@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# Build one patched, signed APK from a released Morphe patch bundle.
+# Build one patched APK from a released Morphe patch bundle.
 #
 # Layout this script expects:
 #   vendor/<app>/   untouched vendor APKs (base APK + original config splits)
 #   bundle/         the released Morphe patch bundle (patches-<version>.mpp)
-#   build/          scratch: the pinned tools, the patched APK, the merge input
-#   out/signed/     the installable APK
+#   build/          scratch: the pinned tools, the patched APK, the merge input,
+#                   and the merge result (build/merged-unsigned.apk)
 #
 # The public repository releases the bundle; download it first:
 #   gh release download --repo pixincreate/morpheus --pattern 'patches-*.mpp' -D bundle/
 #
 # The Morphe CLI applies every patch in the bundle to the untouched base APK and
 # writes an unsigned APK. APKEditor then merges that APK with the original config
-# splits into one standalone APK, and scripts/sign-all.sh signs it. One APK per
-# app keeps Obtainium updates simple: a release carries a single file, and
-# `adb install` replaces the previous build.
+# splits into one standalone APK. scripts/sign-all.sh signs the result; the
+# workflow keeps that step separate so the signing key is not in scope while the
+# patch bundle and the third-party tools run. One APK per app keeps Obtainium
+# updates simple: a release carries a single file, and `adb install` replaces the
+# previous build.
 #
 # Usage:
 #   bash scripts/build.sh
@@ -109,11 +111,11 @@ fetch_pinned() {
   [ "$actual" = "$sha" ] || fail "$jar does not match the expected checksum - delete it and run the script again."
 }
 
-echo "[1/4] check the pinned tools"
+echo "[1/3] check the pinned tools"
 fetch_pinned "$CLI_JAR" "$CLI_URL" "$CLI_SHA256" "the Morphe CLI $CLI_VERSION"
 fetch_pinned "$APKEDITOR_JAR" "$APKEDITOR_URL" "$APKEDITOR_SHA256" "APKEditor $APKEDITOR_VERSION"
 
-echo "[2/4] apply the patch bundle $(basename "$MPP")"
+echo "[2/3] apply the patch bundle $(basename "$MPP")"
 rm -rf "$ROOT/build/cli-tmp"
 rm -f "$PATCHED_BASE"
 "$JAVA" -jar "$CLI_JAR" patch \
@@ -124,7 +126,7 @@ rm -f "$PATCHED_BASE"
   -o="$PATCHED_BASE" \
   "$BASE_APK"
 
-echo "[3/4] merge the patched base APK and the config splits"
+echo "[3/3] merge the patched base APK and the config splits"
 rm -rf "$MERGE_DIR"
 mkdir -p "$MERGE_DIR"
 cp "$PATCHED_BASE" "$MERGE_DIR/$(basename "$BASE_APK")"
@@ -135,5 +137,5 @@ rm -f "$MERGED_UNSIGNED"
 "$JAVA" -jar "$APKEDITOR_JAR" m -clean-meta -f -i "$MERGE_DIR" -o "$MERGED_UNSIGNED"
 [ -f "$MERGED_UNSIGNED" ] || fail "APKEditor did not write $MERGED_UNSIGNED - check the input in ${MERGE_DIR#"$ROOT"/}."
 
-echo "[4/4] sign the merged APK"
-APKS="$MERGED_UNSIGNED" SIGNED_NAME="$APP_NAME" bash "$ROOT/scripts/sign-all.sh"
+echo "merged APK: ${MERGED_UNSIGNED#"$ROOT"/}"
+echo "next: APKS=\"$MERGED_UNSIGNED\" SIGNED_NAME=\"$APP_NAME\" bash scripts/sign-all.sh"
