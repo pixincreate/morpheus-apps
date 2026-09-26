@@ -81,7 +81,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --name flaresolverr -p localhost:8191:8191 \
+          docker run -d --name flaresolverr --network host \
             ghcr.io/flaresolverr/flaresolverr:latest
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8191/health >/dev/null 2>&1; then
