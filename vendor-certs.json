@@ -5,8 +5,8 @@
     "sha256": "c98a7b93ed7bf9367f9d9a514a0ee36732242b2e5a55c05249121566ac664b3f"
   },
   "com.nothing.smartcenter": {
-    "sha1": "",
-    "sha256": "",
-    "_comment": "Empty on purpose. The maintainer's pulled Nothing X APK is gone and the phone is disconnected. The workflow prints the certificate it sees and skips this check until you fill in both values. APKMirror reports SHA-1 54f2dc06e05e44c9a5e54068a46a21932e0ff5a5 and SHA-256 38183efa71088bc59befeff4a691a26b723a384966ee1231c5ca234185cc3487 for the 3.8.0 APK bundle, and APKPure reports the same SHA-1 - confirm both against your own vendor APK before pinning them."
+    "sha1": "54f2dc06e05e44c9a5e54068a46a21932e0ff5a5",
+    "sha256": "38183efa71088bc59befeff4a691a26b723a384966ee1231c5ca234185cc3487",
+    "_comment": "Confirmed on 3.8.0: the certificate the workflow observed on every split matches the digests APKMirror and APKPure report for the 3.8.0 bundle. The pin now gates future fetches."
   }
 }

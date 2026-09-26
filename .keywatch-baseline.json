@@ -14,6 +14,20 @@
       "finding_type": "Random String",
       "matched_content_hash": "74958e78dde1d8b5ef627171d19082ae462946adf1488484f27dd42c14a197d9",
       "plugin_name": "RandomString"
+    },
+    {
+      "file_path": "vendor-certs.json",
+      "line_number": 8,
+      "finding_type": "Random String",
+      "matched_content_hash": "2c22bd1572add2c159ad5c8ba89476086f1ca978cb42eaaf3c509f559fa63c7f",
+      "plugin_name": "RandomString"
+    },
+    {
+      "file_path": "vendor-certs.json",
+      "line_number": 9,
+      "finding_type": "Random String",
+      "matched_content_hash": "b3a7b38ff6b217c5bdd45f0ffd69b53ad370b1ea40fbe13917005dd98fafb920",
+      "plugin_name": "RandomString"
     }
   ]
 }
