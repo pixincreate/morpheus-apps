@@ -87,8 +87,9 @@ The workflow fails with a clear `::error::` message when a secret is missing.
 
 ## Bump an app version
 
-Edit the version in the build matrix in `.github/workflows/build.yml`, and refresh
-`vendor/SHA256SUMS` after uploading the new vendor APKs.
+Edit the version and its version code in the build matrix in
+`.github/workflows/build.yml`, and refresh `vendor/SHA256SUMS` after uploading the
+new vendor APKs.
 The next run publishes a new release, for example `ather-13.5.1`, and Obtainium picks
 it up.
 
@@ -105,7 +106,8 @@ gh release download vendor/ather/13.5.0 -p '*.apk' -D vendor/ather/
 Name the base APK after its package and keep the original split names:
 
 - `com.athermobileapp.apk`, then `config.arm64_v8a.apk`, `config.en.apk`,
-  `config.mdpi.apk` (or the `split_config.*.apk` names that `adb` returns).
+  `config.mdpi.apk`. These names must match the `splits` value in the build
+  matrix.
 - `com.nothing.smartcenter.apk`, then every config split from the vendor bundle.
 
 ### Read the APKs from the phone
@@ -142,11 +144,12 @@ the same way.
 Commit the checksums so the workflow can verify the vendor release:
 
 ```bash
-(cd vendor && shasum -a 256 ather/*.apk > SHA256SUMS)
+(cd vendor && shasum -a 256 ather/*.apk nothingx/*.apk > SHA256SUMS)
 ```
 
 Refresh `vendor/SHA256SUMS` whenever you upload a new vendor release.
-The workflow skips the checksum gate when the file is not present.
+When the file exists, it must list every APK that is built; the workflow fails on a
+missing entry and on a checksum mismatch.
 
 ### Certificate pins
 
