@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Sign the patched base APK plus the original config split APKs with one shared
-# key. Produces an installable split set under out/signed/.
-# Every split in an install set must be signed with the same key, or the
-# package manager rejects the install (INSTALL_FAILED_INVALID_APK /
-# signature mismatch).
+# Align and sign the APKs scripts/build.sh produced with one shared key.
 #
-# Override these settings in the environment to reuse the script for another app:
-#   APP_NAME             names the default split directory (default: ather)
-#   SPLITS               config split names under SRC_SPLITS_DIR, space separated
-#                        (default: empty; scripts/build.sh fills it with every
-#                        APK in vendor/<APP_NAME>/ that is not the base APK)
-#   SRC_SPLITS_DIR       directory with the original config.*.apk
-#                        (default: vendor/<APP_NAME>)
-#   PATCHED_BASE         unsigned patched base APK (default: build/base-unsigned.apk)
+# The build produces one merged APK per app. Signing every build with one key
+# keeps the signature stable, so the package manager treats a new build as an
+# update of the previous one: without that, Android rejects the install with a
+# signature mismatch.
+#
+# Override these settings in the environment to reuse the script:
+#   APKS                 input APKs, space separated
+#                        (default: build/merged-unsigned.apk)
+#   SIGNED_NAME          output name for a single input, without .apk
+#                        (default: the input file name)
 #   OUT_DIR              signed output directory (default: out/signed)
 #   KS                   signing keystore (required; never commit one)
 #   KS_PASS              keystore password (required)
@@ -23,7 +21,6 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="${APP_NAME:-ather}"
 ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 export ANDROID_HOME
 BUILD_TOOLS_VERSION="${BUILD_TOOLS_VERSION:-37.0.0}"
@@ -38,7 +35,9 @@ KS="${KS:-}"
 KS_PASS="${KS_PASS:-}"
 KS_KEY_PASS="${KS_KEY_PASS:-$KS_PASS}"
 KS_ALIAS="${KS_ALIAS:-}"
-SPLITS="${SPLITS:-}"
+APKS="${APKS:-$ROOT/build/merged-unsigned.apk}"
+SIGNED_NAME="${SIGNED_NAME:-}"
+OUT_DIR="${OUT_DIR:-$ROOT/out/signed}"
 
 [ -n "$KS" ] || fail "KS is not set - point it at the signing keystore (see README.md to add the secrets)."
 [ -n "$KS_PASS" ] || fail "KS_PASS is not set - set it to the KEYSTORE_PASSWORD secret."
@@ -48,22 +47,20 @@ SPLITS="${SPLITS:-}"
 
 export KS_PASS KS_KEY_PASS
 
-SRC_SPLITS_DIR="${SRC_SPLITS_DIR:-$ROOT/vendor/$APP_NAME}"  # original split APKs live here
-PATCHED_BASE="${PATCHED_BASE:-$ROOT/build/base-unsigned.apk}"
-OUT_DIR="${OUT_DIR:-$ROOT/out/signed}"
-
-if [ -z "$OUT_DIR" ] || [ "$OUT_DIR" = "/" ]; then
-  fail "refusing to remove OUT_DIR '$OUT_DIR'"
-fi
-[ -f "$PATCHED_BASE" ] || fail "$PATCHED_BASE is missing - run scripts/build.sh first."
+# Keep the recursive delete inside the repository output directory.
+case "$OUT_DIR" in
+  "$ROOT"/out|"$ROOT"/out/*) ;;
+  *) fail "OUT_DIR must live under $ROOT/out - refusing to remove '$OUT_DIR'" ;;
+esac
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 align_and_sign() {
-  local in="$1" name="$2"
+  local src="$1" name="$2"
   local aligned="$OUT_DIR/${name}.aligned.apk"
   local final="$OUT_DIR/${name}.apk"
-  "$BT/zipalign" -p -f 4 "$in" "$aligned"
+  [ -f "$src" ] || fail "$src is missing - run scripts/build.sh first."
+  "$BT/zipalign" -p -f 4 "$src" "$aligned"
   "$BT/apksigner" sign \
     --ks "$KS" --ks-pass env:KS_PASS --key-pass env:KS_KEY_PASS \
     --ks-key-alias "$KS_ALIAS" \
@@ -74,12 +71,16 @@ align_and_sign() {
   echo "signed: $final"
 }
 
-align_and_sign "$PATCHED_BASE" "base"
-INSTALL_APKS="$OUT_DIR/base.apk"
-for s in $SPLITS; do
-  align_and_sign "$SRC_SPLITS_DIR/${s}.apk" "$s"
-  INSTALL_APKS="$INSTALL_APKS $OUT_DIR/$s.apk"
+n=0
+for src in $APKS; do
+  n=$((n + 1))
+  name="$(basename "$src" .apk)"
+  if [ -n "$SIGNED_NAME" ] && [ "$n" -eq 1 ]; then
+    name="$SIGNED_NAME"
+  fi
+  align_and_sign "$src" "$name"
 done
+[ "$n" -gt 0 ] || fail "APKS is empty - pass the unsigned APKs to sign."
 
 echo
 echo "Verifying signatures:"
@@ -89,6 +90,11 @@ for f in "$OUT_DIR"/*.apk; do
 done
 
 echo
-echo "Install set ready in: $OUT_DIR"
+echo "Signed APKs ready in: $OUT_DIR"
 echo "Install with the phone connected:"
-echo "  adb install-multiple $INSTALL_APKS"
+if [ "$n" -eq 1 ]; then
+  name="$(basename "$APKS" .apk)"
+  echo "  adb install $OUT_DIR/${SIGNED_NAME:-$name}.apk"
+else
+  echo "  adb install-multiple $OUT_DIR/*.apk"
+fi

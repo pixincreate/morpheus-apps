@@ -1,7 +1,9 @@
 name: Build
 
 # Build patched, signed APKs from the newest public Morphe patch bundle and
-# publish them as one rolling private release tagged "all".
+# publish one versioned private release per app: ather-<version> and
+# nothingx-<version>. Each release carries a single merged APK, named
+# morpheus-<app>-<version>.apk, so Obtainium can detect and install updates.
 #
 # This repository is private and must stay private. It holds the signing key in
 # an encrypted secret and the untouched vendor APKs as private release assets.
@@ -15,19 +17,17 @@ name: Build
 #   KEY_ALIAS           key alias
 #
 # GITHUB_TOKEN is automatic. It reads this repository's private vendor releases
-# and the public patch bundle release, and writes the rolling release.
+# and the public patch bundle release, and writes the app releases.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * *"
+    # Weekly. The vendor versions change rarely, and every run downloads the
+    # vendor APKs, the patch bundle, and two pinned tools.
+    - cron: "0 2 * * 1"
 
 permissions:
   contents: write
-
-concurrency:
-  group: rolling-release
-  cancel-in-progress: false
 
 jobs:
   build:
@@ -35,22 +35,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # One build per app at a time; a manual dispatch waits for the scheduled run.
+    concurrency:
+      group: build-${{ matrix.app.name }}
+      cancel-in-progress: false
+
     strategy:
       # One app failing must not lose the other app's build.
       fail-fast: false
       matrix:
         app:
           - name: ather
+            title: Ather
             package: com.athermobileapp
             version: "13.5.0"
             # Explicit: the maintainer's untouched APKs are named config.*.apk.
             splits: config.arm64_v8a config.en config.mdpi
           - name: nothingx
+            title: Nothing X
             package: com.nothing.smartcenter
             version: "3.8.0"
             # Nothing X ships a base APK plus many config splits under names the
-            # vendor bundle decides. scripts/build.sh discovers and signs every
-            # *.apk in vendor/nothingx/ that is not the base APK.
+            # vendor bundle decides. scripts/build.sh discovers every *.apk in
+            # vendor/nothingx/ that is not the base APK.
             splits: ""
 
     steps:
@@ -58,7 +65,8 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       - name: Set up JDK
-        # The Morphe CLI and apksigner run on this JDK; JAVA_HOME points at it.
+        # The Morphe CLI, APKEditor and apksigner run on this JDK; JAVA_HOME
+        # points at it.
         uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
@@ -153,23 +161,53 @@ jobs:
           KS_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: bash scripts/build.sh
 
-      - name: Stage the signed APKs with deterministic names
+      - name: Stage the signed APK
+        # The merge must leave exactly one APK: a release carries one file so
+        # Obtainium installs it with a plain install.
         shell: bash
         run: |
           set -euo pipefail
+          count="$(find out/signed -maxdepth 1 -name '*.apk' | wc -l | tr -d ' ')"
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected exactly one signed APK, found $count. The split merge failed."
+            ls -l out/signed
+            exit 1
+          fi
           mkdir -p dist
-          for f in out/signed/*.apk; do
-            cp "$f" "dist/${{ matrix.app.name }}-$(basename "$f")"
-          done
+          cp out/signed/*.apk "dist/morpheus-${{ matrix.app.name }}-${{ matrix.app.version }}.apk"
           ls -l dist
 
-      - name: Upload the signed APKs
+      - name: Upload the signed APK
         uses: actions/upload-artifact@v7.0.1
         with:
           name: signed-${{ matrix.app.name }}
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish the release
+        uses: ncipollo/release-action@v1.21.0
+        with:
+          tag: ${{ matrix.app.name }}-${{ matrix.app.version }}
+          name: ${{ matrix.app.title }} ${{ matrix.app.version }}
+          body: |
+            Patched and signed Morphe build of ${{ matrix.app.title }} ${{ matrix.app.version }}.
+
+            Install on the phone:
+
+                adb install morpheus-${{ matrix.app.name }}-${{ matrix.app.version }}.apk
+
+            Obtainium: add this repository as a source, filter the release titles
+            with `^${{ matrix.app.title }}`, and extract the version with
+            `(\d+\.\d+\.\d+)`. See README.md for the exact settings.
+
+            Every build is signed with the same key, so an install replaces the
+            previous build. This release is private: do not publish the APK.
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: false
+          artifacts: "dist/*.apk"
+          artifactErrorsFailBuild: true
 
       - name: Delete the signing keystore
         if: always()
@@ -180,52 +218,3 @@ jobs:
           if [ -n "$ks" ] && [ -f "$ks" ]; then
             rm -f "$ks"
           fi
-
-  publish:
-    name: publish-all
-    needs: build
-    # Publish whatever signed APKs the matrix produced, even when one app failed.
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Download the signed APKs
-        uses: actions/download-artifact@v8.0.1
-        continue-on-error: true
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Check the signed APKs
-        shell: bash
-        run: |
-          set -euo pipefail
-          count="$(find dist -maxdepth 1 -name '*.apk' | wc -l | tr -d ' ')"
-          if [ "$count" -eq 0 ]; then
-            echo "::error::No signed APKs were produced, so there is nothing to publish."
-            exit 1
-          fi
-          ls -l dist
-
-      - name: Publish the rolling release
-        uses: ncipollo/release-action@v1.21.0
-        with:
-          tag: all
-          name: Morpheus builds
-          body: |
-            Rolling release of patched, signed Morpheus APKs.
-
-            Assets are named `<app>-<part>.apk`. Install a split set with:
-
-                adb install-multiple ather-base.apk ather-config.arm64_v8a.apk ather-config.en.apk ather-config.mdpi.apk
-
-            Nothing X ships a base APK plus many config splits. Pass every
-            `nothingx-*.apk` file to `adb install-multiple`.
-
-            This repository is private. Do not publish these APKs.
-          allowUpdates: true
-          replacesArtifacts: true
-          makeLatest: true
-          artifacts: "dist/*.apk"
-          artifactErrorsFailBuild: true
