@@ -69,34 +69,18 @@ jobs:
         with:
           packages: "build-tools;37.0.0"
 
-      - name: Start FlareSolverr (optional)
-        # Runs only when the repository variable FLARESOLVERR_URL is set, for
-        # example to http://localhost:8191. The private vendor release stays the
-        # primary source; FlareSolverr only feeds the fetch fallback. Cloudflare
-        # binds cf_clearance to the client IP and user agent, so the solve and
-        # the download must leave from one public IP. continue-on-error keeps a
-        # broken optional step from failing the primary path.
-        if: ${{ vars.FLARESOLVERR_URL != '' }}
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run -d --name flaresolverr --network host \
-            ghcr.io/flaresolverr/flaresolverr:latest
-          for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:8191/health >/dev/null 2>&1; then
-              echo "FlareSolverr is ready on http://localhost:8191"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::warning::FlareSolverr did not become ready on http://localhost:8191."
-
       - name: Fetch vendor APKs
+        # The private vendor release is the primary source. Only when it is
+        # missing does the step fall back to scripts/fetch-vendor-apks.mjs,
+        # which drives a headed browser through patchright: APKPure serves the
+        # direct endpoints behind Cloudflare, and headless Chromium loops
+        # through the challenge without ever firing the download. Headed mode
+        # needs a display, so run it under Xvfb. This path is best-effort;
+        # APKPure can change the endpoint or the challenge at any time. The
+        # verify step gates whatever arrives.
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FLARESOLVERR_URL: ${{ vars.FLARESOLVERR_URL }}
         run: |
           set -euo pipefail
           app="${{ matrix.app.name }}"
@@ -105,8 +89,14 @@ jobs:
           if gh release download "$tag" -p '*.apk' -D "vendor/$app" --clobber; then
             echo "Fetched the vendor APKs from the private release $tag"
           else
-            echo "::warning::The private release $tag has no APK assets. Falling back to scripts/fetch-vendor-apks.sh."
-            bash scripts/fetch-vendor-apks.sh "$app" "${{ matrix.app.version }}"
+            echo "::warning::The private release $tag has no APK assets. Falling back to scripts/fetch-vendor-apks.mjs."
+            if ! command -v xvfb-run >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y xvfb
+            fi
+            npm install --no-save --no-audit --no-fund patchright@1.63.0
+            npx --yes patchright install chromium
+            xvfb-run -a node scripts/fetch-vendor-apks.mjs "$app"
           fi
 
       - name: Verify vendor APKs

@@ -1,6 +1,7 @@
 build/
 bundle/
 dist/
+node_modules/
 out/
 *.jks
 *.keystore
