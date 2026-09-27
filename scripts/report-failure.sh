@@ -162,8 +162,14 @@ EOF
 issue_slug() { printf 'morpheus-ci-failure-%s-%s\n' "$1" "$2"; }
 
 find_open_issue() { # $1 repo, $2 slug
-  gh issue list -R "$1" --state open --search "$2 in:body" \
-    --json number --jq '.[0].number // empty' 2>/dev/null || true
+  # Quote the marker so GitHub searches for the phrase instead of separate
+  # words, then require the exact marker in the body. The issue search
+  # tokenises and its index lags, so both guards are needed to avoid matching
+  # another kind's issue.
+  gh issue list -R "$1" --state open --search "\"$2\" in:body" \
+    --json number,body \
+    --jq "first(.[] | select(.body | contains(\"$2\")) | .number) // empty" \
+    2>/dev/null || true
 }
 
 create_issue() { # $1 repo, $2 title, $3 body file
