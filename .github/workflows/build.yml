@@ -16,8 +16,18 @@ name: Build
 #   KEY_PASSWORD        key password
 #   KEY_ALIAS           key alias
 #
+# Optional secret:
+#   ISSUE_TOKEN         fine-grained token with issues:write on this repository
+#                       and on pixincreate/morpheus. The report job uses it to
+#                       file a failure in the repository that needs the fix.
+#                       Without it the failure lands here instead.
+#
 # GITHUB_TOKEN is automatic. It reads this repository's private vendor releases
 # and the public patch bundle release, and writes the app releases.
+#
+# The report job turns a failed run into an issue: patch and bundle failures go
+# to pixincreate/morpheus, pipeline failures stay here. A green run closes the
+# issues earlier failures opened.
 
 on:
   workflow_dispatch:
@@ -235,3 +245,31 @@ jobs:
           if [ -n "$ks" ] && [ -f "$ks" ]; then
             rm -f "$ks"
           fi
+
+  report:
+    name: report
+    needs: [build]
+    # Always run: a failed matrix leg must still file its issue, and a green run
+    # closes the issues earlier failures opened.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read  # read the failed job logs
+      contents: read # check out the scripts
+      issues: write  # file and close the issues
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report the failure or close resolved issues
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ISSUE_TOKEN || secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+          MORPHE_REPO: pixincreate/morpheus
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: bash scripts/report-failure.sh
