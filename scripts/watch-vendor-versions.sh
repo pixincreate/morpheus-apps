@@ -210,7 +210,7 @@ fi
 
 git -C "$ROOT" push origin "HEAD:${GITHUB_REF_NAME:-main}"
 
-gh workflow run build.yml -R "$BUILD_REPO"
+gh workflow run build.yml -R "$BUILD_REPO" --ref "${GITHUB_REF_NAME:-main}"
 sleep 10
 run_url="$(gh run list -R "$BUILD_REPO" --workflow build.yml --limit 1 \
   --json url --jq '.[0].url' 2>/dev/null || true)"
