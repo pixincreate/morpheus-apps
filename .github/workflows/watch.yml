@@ -1,0 +1,58 @@
+# Morpheus vendor watcher.
+#
+# Runs an hour before the weekly build. It asks APKPure for the newest build of
+# every app in the build matrix; when the vendor shipped a newer version it
+# refreshes vendor/<app>/, rewrites that app's lines in vendor/SHA256SUMS, bumps
+# the version in the matrix, commits, pushes, files a notification issue and
+# starts the build.
+#
+# The patches were verified against the previous version. A patch that no longer
+# applies fails the build, and the report job in build.yml files that in
+# pixincreate/morpheus.
+name: Watch
+
+on:
+  schedule:
+    # Mondays 01:00 UTC, an hour before the build.
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the bump commit
+  issues: write # file the notification issue
+  actions: write # dispatch the build
+
+concurrency:
+  group: watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: watch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install patchright
+        run: |
+          set -euo pipefail
+          npm install --no-save patchright@1.63.0
+          npx --yes patchright install chromium
+
+      - name: Set the commit identity
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Watch the vendor versions
+        shell: bash
+        env:
+          # The workflow token pushes the bump and dispatches the build.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The issue token files the notification; it needs Issues only.
+          ISSUE_TOKEN: ${{ secrets.ISSUE_TOKEN || secrets.GITHUB_TOKEN }}
+          BUILD_REPO: ${{ github.repository }}
+        run: xvfb-run -a bash scripts/watch-vendor-versions.sh

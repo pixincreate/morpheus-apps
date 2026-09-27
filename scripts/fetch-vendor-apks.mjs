@@ -40,10 +40,15 @@
 //   node scripts/fetch-vendor-apks.mjs ather [version [versionCode [abi [sdk]]]]
 //   node scripts/fetch-vendor-apks.mjs nothingx [version [versionCode [abi [sdk]]]]
 //   node scripts/fetch-vendor-apks.mjs all
+//   node scripts/fetch-vendor-apks.mjs ather --latest-version
+//
+// The --latest-version mode downloads the newest build APKPure serves and prints
+// `version=` and `versionCode=` from its manifest, so the watcher workflow can
+// compare it with the build matrix.
 //
 // Defaults:
 //   app        package                    version  versionCode  abi          sdk
-//   ather      com.athermobileapp          13.5.0   321          arm64-v8a    32
+//   ather      com.athermobileapp          13.5.1   324          arm64-v8a    32
 //   nothingx   com.nothing.smartcenter     3.8.0    3080004      arm64-v8a    32
 //
 // Environment:
@@ -277,8 +282,59 @@ async function fetchApp(name, overrides = {}) {
   }
 }
 
+// Ask APKPure for the newest build of the app and print the version its manifest
+// declares. The watcher workflow compares this with the version the build matrix
+// pins. The archive goes through the same headed patchright path as a normal
+// fetch, so the bot protection is handled in one place.
+async function latestVersion(name) {
+  const app = appDefaults(name);
+  const work = mkdtempSync(join(tmpdir(), "fetch-vendor-apks-"));
+  const archive = join(work, `${name}-latest.xapk`);
+
+  try {
+    console.log(`resolving the latest ${name} version`);
+    await downloadXapk(
+      `https://d.apkpure.com/b/XAPK/${app.package}?version=latest&nc=${app.abi}&sv=${app.sdk}`,
+      archive,
+    );
+    console.log(`downloaded ${statSync(archive).size} bytes`);
+    assertZipMagic(archive);
+
+    let manifest;
+    try {
+      manifest = execFileSync("unzip", ["-p", archive, "manifest.json"], {
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+      });
+    } catch {
+      fail(`${archive} holds no manifest.json, so its version cannot be read.`);
+    }
+
+    const data = JSON.parse(manifest);
+    const version = data.version_name ?? data.versionName;
+    const versionCode = data.version_code ?? data.versionCode;
+    if (!version || !versionCode) {
+      fail(`${name}: the latest manifest declares no version_name or version_code.`);
+    }
+
+    console.log(`version=${version}`);
+    console.log(`versionCode=${versionCode}`);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const name = process.argv[2];
+
+  if (process.argv[3] === "--latest-version") {
+    if (name !== "ather" && name !== "nothingx") {
+      fail("--latest-version works with ather or nothingx.");
+    }
+    await latestVersion(name);
+    return;
+  }
+
   if (name === "all") {
     if (process.argv.length > 3) {
       fail(
@@ -305,7 +361,8 @@ async function main() {
     return;
   }
   fail(
-    "usage: node scripts/fetch-vendor-apks.mjs ather|nothingx|all [version [versionCode [abi [sdk]]]]",
+    "usage: node scripts/fetch-vendor-apks.mjs ather|nothingx|all [version [versionCode [abi [sdk]]]]\n" +
+      "       node scripts/fetch-vendor-apks.mjs ather|nothingx --latest-version",
   );
 }
 
