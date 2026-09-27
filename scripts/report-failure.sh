@@ -167,9 +167,15 @@ find_open_issue() { # $1 repo, $2 slug
 }
 
 create_issue() { # $1 repo, $2 title, $3 body file
+  local url number
+  url="$(gh issue create -R "$1" --title "$2" --body-file "$3")" || return 1
+  number="${url##*/}"
+  # The label is cosmetic. Attach it best-effort, so a missing label or a
+  # repo-scoped token can never block the report itself.
   gh label create ci-failure -R "$1" --force --color FBCA04 \
     --description "Reported automatically by the Build workflow" >/dev/null 2>&1 || true
-  gh issue create -R "$1" --title "$2" --body-file "$3" --label ci-failure
+  gh issue edit "$number" -R "$1" --add-label ci-failure >/dev/null 2>&1 || true
+  printf '%s\n' "$url"
 }
 
 comment_issue() { # $1 repo, $2 number, $3 body file
@@ -230,6 +236,7 @@ report_failures() {
     esac
     local app="${job_name#build-}"
     local logfile steps step kind target version code slug number title bodyfile out
+    local existing found
     logfile="$(mktemp)"
     bodyfile="$(mktemp)"
     gh api --allow-escape-sequences "repos/$REPO/actions/jobs/$job_id/logs" > "$logfile" 2>/dev/null ||
@@ -255,12 +262,26 @@ report_failures() {
       continue
     fi
 
-    if [ -n "$(find_open_issue "$target" "$slug")" ]; then
-      number="$(find_open_issue "$target" "$slug")"
+    # The marker can live in either repository: the target when the token can
+    # reach it, this repository when it cannot, so search both before creating.
+    number=""
+    existing="$target"
+    found="$(find_open_issue "$target" "$slug")"
+    if [ -n "$found" ]; then
+      number="$found"
+    elif [ "$REPO" != "$target" ]; then
+      found="$(find_open_issue "$REPO" "$slug")"
+      if [ -n "$found" ]; then
+        number="$found"
+        existing="$REPO"
+      fi
+    fi
+
+    if [ -n "$number" ]; then
       build_body "$bodyfile" "$kind" "$app" "$version" "$code" "$step" "$logfile" \
         "This failure happened again."
-      comment_issue "$target" "$number" "$bodyfile"
-      info "commented on $target#$number"
+      comment_issue "$existing" "$number" "$bodyfile"
+      info "commented on $existing#$number"
     else
       build_body "$bodyfile" "$kind" "$app" "$version" "$code" "$step" "$logfile"
       if out="$(create_issue "$target" "$title" "$bodyfile" 2>&1)"; then
