@@ -76,8 +76,8 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const APPS = {
   ather: {
     package: "com.athermobileapp",
-    version: "13.5.0",
-    versionCode: "321",
+    version: "13.5.1",
+    versionCode: "324",
     abi: "arm64-v8a",
     sdk: "32",
   },

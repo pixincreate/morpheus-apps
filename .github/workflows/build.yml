@@ -48,8 +48,8 @@ jobs:
           - name: ather
             title: Ather
             package: com.athermobileapp
-            version: "13.5.0"
-            version_code: "321"
+            version: "13.5.1"
+            version_code: "324"
             # Explicit: the maintainer's untouched APKs are named config.*.apk.
             splits: config.arm64_v8a config.en config.mdpi
           - name: nothingx
