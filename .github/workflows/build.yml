@@ -64,7 +64,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No step pushes with git, so do not leave the write-scoped token in
           # .git/config, where the patch and merge tools could read it.
@@ -73,13 +73,13 @@ jobs:
       - name: Set up JDK
         # The Morphe CLI, APKEditor and apksigner run on this JDK; JAVA_HOME
         # points at it.
-        uses: actions/setup-java@v6.0.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4.0.4
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           packages: "build-tools;37.0.0"
 
@@ -195,7 +195,7 @@ jobs:
           ls -l dist
 
       - name: Upload the signed APK
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: signed-${{ matrix.app.name }}
           path: dist/*.apk
@@ -203,7 +203,7 @@ jobs:
           retention-days: 7
 
       - name: Publish the release
-        uses: ncipollo/release-action@v1.21.0
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
         with:
           tag: ${{ matrix.app.name }}-${{ matrix.app.version }}
           name: ${{ matrix.app.title }} ${{ matrix.app.version }}

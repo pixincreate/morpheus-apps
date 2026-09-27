@@ -1,0 +1,15 @@
+version: 2
+
+updates:
+  # The workflow pins every action to a commit SHA. Dependabot keeps those
+  # hashes current and opens one reviewable pull request when something moves.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
