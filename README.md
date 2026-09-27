@@ -17,6 +17,9 @@ so do not make the repository public and do not forward release assets.
 
 The workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) runs weekly
 (Mondays 02:00 UTC) and on demand.
+[`.github/workflows/watch.yml`](.github/workflows/watch.yml) runs an hour earlier: when
+the vendor has shipped a newer app version it downloads it, bumps the matrix, commits the
+bump, files a notification issue and starts the build.
 For each app it does this:
 
 1. Downloads the untouched vendor APKs from the private `vendor/<app>/<version>`
@@ -113,11 +116,18 @@ that issue, and the next green run closes it.
 
 ## Bump an app version
 
-Edit the version and its version code in the build matrix in
-`.github/workflows/build.yml`, and refresh `vendor/SHA256SUMS` after uploading the
-new vendor APKs.
-The next run publishes a new release, for example `ather-13.5.1`, and Obtainium picks
-it up.
+The weekly [`.github/workflows/watch.yml`](.github/workflows/watch.yml) does this for
+you. `scripts/watch-vendor-versions.sh` resolves the newest version of every app, and when
+it is newer than the matrix it downloads the APKs, refreshes `vendor/SHA256SUMS`, bumps
+`version` and `version_code` in `.github/workflows/build.yml`, commits, opens a
+notification issue and starts the build.
+
+The patches are verified against the version they were retargeted for, so a newer vendor
+build can move the anchors a patch pins. The build then fails in `Build and merge` and
+`scripts/report-failure.sh` files the fix in `pixincreate/morpheus`.
+
+To do it by hand, edit the version and its version code in the build matrix and refresh
+`vendor/SHA256SUMS` after uploading the new vendor APKs.
 
 ## Upload the vendor APKs
 
@@ -196,7 +206,12 @@ gh workflow run build.yml -R pixincreate/morpheus-apps
 gh run list --workflow build.yml -R pixincreate/morpheus-apps
 ```
 
-The weekly schedule runs on Mondays at 02:00 UTC.
+The weekly schedule runs on Mondays at 02:00 UTC. The version watch runs at 01:00 UTC,
+an hour before it:
+
+```bash
+gh workflow run watch.yml -R pixincreate/morpheus-apps
+```
 
 ## Install a build on the phone
 
@@ -273,10 +288,12 @@ A download that gets through is not trusted on its own: `vendor/SHA256SUMS` and
 | Path | Purpose |
 | --- | --- |
 | `.github/workflows/build.yml` | The build, verify, merge, sign, and release workflow |
+| `.github/workflows/watch.yml` | The weekly version watch that bumps the matrix and files a notification |
 | `scripts/build.sh` | Apply the patch bundle, then merge the base APK with the config splits |
 | `scripts/sign-all.sh` | Align and sign the merged APK |
 | `scripts/verify-vendor-apks.sh` | Check checksums and certificate pins |
 | `scripts/report-failure.sh` | File a failed run as an issue in the repository that needs the fix |
 | `scripts/fetch-vendor-apks.mjs` | Best-effort web fallback for the vendor APKs (patchright, headed) |
+| `scripts/watch-vendor-versions.sh` | Resolve the newest vendor version, refresh the checksums and bump the matrix |
 | `vendor/SHA256SUMS` | SHA-256 of the vendor APKs, relative to `vendor/` |
 | `vendor-certs.json` | Signing-certificate pins per package |
