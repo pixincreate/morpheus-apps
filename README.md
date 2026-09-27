@@ -100,7 +100,8 @@ fix:
 
 `GITHUB_TOKEN` can only open issues here. To route patch failures to the public
 repository, create a fine-grained token with `Issues: Read and write` on
-`pixincreate/morpheus` and on `pixincreate/morpheus-apps`, then store it:
+`pixincreate/morpheus` and on `pixincreate/morpheus-apps`, then store it. The
+workflow token keeps reading the run logs, so the token needs no other permission:
 
 ```bash
 gh secret set ISSUE_TOKEN -R pixincreate/morpheus-apps

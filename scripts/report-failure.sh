@@ -14,8 +14,9 @@
 # failure comments on the open issue, and a green run closes it.
 #
 # Environment:
-#   GH_TOKEN      actions:read on REPO; for cross-repository issues the token
-#                 also needs issues:write on MORPHE_REPO
+#   GH_TOKEN      the workflow token; reads the run and its logs (actions:read)
+#   ISSUE_TOKEN   token that files the issues; issues:write on REPO and on
+#                 MORPHE_REPO. Defaults to GH_TOKEN, which only reaches REPO.
 #   RUN_ID        run to inspect (CI sets GITHUB_RUN_ID)
 #   REPO          repository that ran the workflow (CI sets GITHUB_REPOSITORY)
 #   MORPHE_REPO   patches repository, default pixincreate/morpheus
@@ -36,6 +37,12 @@ KINDS="patch fetch verify bundle signing merge stage publish unknown"
 
 info() { printf '%s\n' "$*"; }
 warn() { printf '::warning::%s\n' "$*" >&2; }
+
+# Issue operations use ISSUE_TOKEN when it is set. The workflow token keeps
+# reading the logs, so a fine-grained PAT needs the Issues permission only.
+issue_gh() {
+  GH_TOKEN="${ISSUE_TOKEN:-$GH_TOKEN}" gh "$@"
+}
 
 # Read a field of one app from the workflow matrix.
 matrix_field() { # $1 app, $2 field
@@ -166,7 +173,7 @@ find_open_issue() { # $1 repo, $2 slug
   # words, then require the exact marker in the body. The issue search
   # tokenises and its index lags, so both guards are needed to avoid matching
   # another kind's issue.
-  gh issue list -R "$1" --state open --search "\"$2\" in:body" \
+  issue_gh issue list -R "$1" --state open --search "\"$2\" in:body" \
     --json number,body \
     --jq "first(.[] | select(.body | contains(\"$2\")) | .number) // empty" \
     2>/dev/null || true
@@ -174,18 +181,18 @@ find_open_issue() { # $1 repo, $2 slug
 
 create_issue() { # $1 repo, $2 title, $3 body file
   local url number
-  url="$(gh issue create -R "$1" --title "$2" --body-file "$3")" || return 1
+  url="$(issue_gh issue create -R "$1" --title "$2" --body-file "$3")" || return 1
   number="${url##*/}"
   # The label is cosmetic. Attach it best-effort, so a missing label or a
   # repo-scoped token can never block the report itself.
-  gh label create ci-failure -R "$1" --force --color FBCA04 \
+  issue_gh label create ci-failure -R "$1" --force --color FBCA04 \
     --description "Reported automatically by the Build workflow" >/dev/null 2>&1 || true
-  gh issue edit "$number" -R "$1" --add-label ci-failure >/dev/null 2>&1 || true
+  issue_gh issue edit "$number" -R "$1" --add-label ci-failure >/dev/null 2>&1 || true
   printf '%s\n' "$url"
 }
 
 comment_issue() { # $1 repo, $2 number, $3 body file
-  gh issue comment "$2" -R "$1" --body-file "$3"
+  issue_gh issue comment "$2" -R "$1" --body-file "$3"
 }
 
 build_body() { # $1 file, $2 kind, $3 app, $4 version, $5 code, $6 step, $7 log file, $8 note
@@ -318,9 +325,9 @@ close_resolved() {
             info "dry run: would close $target#$number ($slug)"
             continue
           fi
-          if gh issue comment "$number" -R "$target" \
+          if issue_gh issue comment "$number" -R "$target" \
             --body "The Build workflow succeeded again in $RUN_URL, so this is resolved. Closing." >/dev/null 2>&1 &&
-            gh issue close "$number" -R "$target" >/dev/null 2>&1; then
+            issue_gh issue close "$number" -R "$target" >/dev/null 2>&1; then
             info "closed $target#$number ($slug)"
           else
             warn "cannot close $target#$number, check the token permissions"
