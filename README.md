@@ -39,6 +39,9 @@ For each app it does this:
 7. Publishes the release `ather-13.5.1` with the asset
    `morpheus-ather-13.5.1.apk` through `ncipollo/release-action`.
    A rerun replaces the asset and the notes in the same release.
+8. Reports a failure as an issue in the repository that needs the fix with
+   `scripts/report-failure.sh`. Patch and bundle failures go to
+   `pixincreate/morpheus`, everything else stays here.
 
 The build matrix uses `fail-fast: false`, so one app failing does not lose the other
 app's APKs.
@@ -84,6 +87,28 @@ gh secret set KEY_ALIAS -R pixincreate/morpheus-apps --body <alias>
 
 Never commit a keystore or a password.
 The workflow fails with a clear `::error::` message when a secret is missing.
+
+### Failure issues (optional)
+
+When a run fails, the `report` job opens an issue in the repository that needs the
+fix:
+
+| Failure | Repository |
+| --- | --- |
+| A patch fingerprint no longer matches, or the bundle download fails | `pixincreate/morpheus` |
+| Vendor fetch, verification, signing, merge, staging, publishing | this repository |
+
+`GITHUB_TOKEN` can only open issues here. To route patch failures to the public
+repository, create a fine-grained token with `Issues: Read and write` on
+`pixincreate/morpheus` and on `pixincreate/morpheus-apps`, then store it:
+
+```bash
+gh secret set ISSUE_TOKEN -R pixincreate/morpheus-apps
+```
+
+Without the token, every failure lands here with a note that says where it belongs.
+The job keeps one open issue per failure kind and app: a repeated failure comments on
+that issue, and the next green run closes it.
 
 ## Bump an app version
 
@@ -250,6 +275,7 @@ A download that gets through is not trusted on its own: `vendor/SHA256SUMS` and
 | `scripts/build.sh` | Apply the patch bundle, then merge the base APK with the config splits |
 | `scripts/sign-all.sh` | Align and sign the merged APK |
 | `scripts/verify-vendor-apks.sh` | Check checksums and certificate pins |
+| `scripts/report-failure.sh` | File a failed run as an issue in the repository that needs the fix |
 | `scripts/fetch-vendor-apks.mjs` | Best-effort web fallback for the vendor APKs (patchright, headed) |
 | `vendor/SHA256SUMS` | SHA-256 of the vendor APKs, relative to `vendor/` |
 | `vendor-certs.json` | Signing-certificate pins per package |
