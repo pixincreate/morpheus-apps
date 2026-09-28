@@ -48,7 +48,7 @@
 //
 // Defaults:
 //   app        package                    version  versionCode  abi          sdk
-//   ather      com.athermobileapp          13.5.1   324          arm64-v8a    32
+//   ather      com.athermobileapp          13.5.0   321          arm64-v8a    32
 //   nothingx   com.nothing.smartcenter     3.8.0    3080004      arm64-v8a    32
 //
 // Environment:
@@ -81,8 +81,8 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const APPS = {
   ather: {
     package: "com.athermobileapp",
-    version: "13.5.1",
-    versionCode: "324",
+    version: "13.5.0",
+    versionCode: "321",
     abi: "arm64-v8a",
     sdk: "32",
   },
