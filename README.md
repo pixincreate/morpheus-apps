@@ -119,15 +119,15 @@ that issue, and the next green run closes it.
 The weekly [`.github/workflows/watch.yml`](.github/workflows/watch.yml) does this for
 you. `scripts/watch-vendor-versions.sh` resolves the newest version of every app, and when
 it is newer than the matrix it downloads the APKs, refreshes `vendor/SHA256SUMS`, bumps
-`version` and `version_code` in `.github/workflows/build.yml`, commits, opens a
+`version` and `version_code` in `vendor/versions.json`, commits, opens a
 notification issue and starts the build.
 
 The patches are verified against the version they were retargeted for, so a newer vendor
 build can move the anchors a patch pins. The build then fails in `Build and merge` and
 `scripts/report-failure.sh` files the fix in `pixincreate/morpheus`.
 
-To do it by hand, edit the version and its version code in the build matrix and refresh
-`vendor/SHA256SUMS` after uploading the new vendor APKs.
+To do it by hand, edit the version and its version code in `vendor/versions.json` and
+refresh `vendor/SHA256SUMS` after uploading the new vendor APKs.
 
 ## Upload the vendor APKs
 
@@ -142,8 +142,8 @@ gh release download vendor/ather/13.5.1 -p '*.apk' -D vendor/ather/
 Name the base APK after its package and keep the original split names:
 
 - `com.athermobileapp.apk`, then `config.arm64_v8a.apk`, `config.en.apk`,
-  `config.mdpi.apk`. These names must match the `splits` value in the build
-  matrix.
+  `config.mdpi.apk`. These names must match the `splits` value in
+  `vendor/versions.json`.
 - `com.nothing.smartcenter.apk`, then every config split from the vendor bundle.
 
 ### Read the APKs from the phone
@@ -295,5 +295,6 @@ A download that gets through is not trusted on its own: `vendor/SHA256SUMS` and
 | `scripts/report-failure.sh` | File a failed run as an issue in the repository that needs the fix |
 | `scripts/fetch-vendor-apks.mjs` | Best-effort web fallback for the vendor APKs (patchright, headed) |
 | `scripts/watch-vendor-versions.sh` | Resolve the newest vendor version, refresh the checksums and bump the matrix |
+| `vendor/versions.json` | The app versions, version codes, packages, and split names the build reads |
 | `vendor/SHA256SUMS` | SHA-256 of the vendor APKs, relative to `vendor/` |
 | `vendor-certs.json` | Signing-certificate pins per package |

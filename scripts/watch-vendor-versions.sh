@@ -5,7 +5,7 @@
 #
 # Asks APKPure for the newest build of every app in the build matrix. When the
 # vendor ships a newer version it refreshes vendor/<app>/, rewrites that app's
-# lines in vendor/SHA256SUMS, bumps the version in .github/workflows/build.yml,
+# lines in vendor/SHA256SUMS, bumps the version in vendor/versions.json,
 # commits, pushes, files a notification issue and dispatches the build.
 #
 # The bump is only half the work: the patches were verified against the previous
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORKFLOW="$ROOT/.github/workflows/build.yml"
+MATRIX="$ROOT/vendor/versions.json"
 FETCH="$ROOT/scripts/fetch-vendor-apks.mjs"
 BUILD_REPO="${BUILD_REPO:-${GITHUB_REPOSITORY:-pixincreate/morpheus-apps}}"
 DRY_RUN="${DRY_RUN:-}"
@@ -38,18 +38,13 @@ issue_gh() {
 
 # The app names in the build matrix, in file order.
 app_list() {
-  awk '/^      matrix:/{inside=1}
-       inside && $1=="-" && $2=="name:"{print $3}
-       /^    steps:/{inside=0}' "$WORKFLOW"
+  jq -r '.app[].name' "$MATRIX"
 }
 
-# One field of one matrix app, quotes stripped.
+# One field of one matrix app.
 app_field() { # $1 app, $2 field
-  awk -v app="$1" -v want="$2" '
-    /^      matrix:/{inside=1}
-    inside && $1=="-" && $2=="name:"{current=$3}
-    inside && current==app && $1==want":"{gsub(/"/,"",$2); print $2; exit}
-    /^    steps:/{inside=0}' "$WORKFLOW"
+  jq -r --arg app "$1" --arg field "$2" \
+    '.app[] | select(.name == $app) | .[$field] // empty' "$MATRIX"
 }
 
 sha256() {
@@ -75,21 +70,10 @@ refresh_checksums() { # $1 app
 bump_matrix() { # $1 app, $2 version, $3 version code
   local app="$1" version="$2" code="$3" tmp
   tmp="$(mktemp)"
-  awk -v app="$app" -v version="$version" -v code="$code" '
-    /^      matrix:/{inside=1}
-    /^    steps:/{inside=0}
-    inside && $1=="-" && $2=="name:"{current=$3}
-    inside && current==app && $1=="version:"{
-      print "            version: \"" version "\""
-      next
-    }
-    inside && current==app && $1=="version_code:"{
-      print "            version_code: \"" code "\""
-      next
-    }
-    {print}
-  ' "$WORKFLOW" > "$tmp"
-  mv "$tmp" "$WORKFLOW"
+  jq --arg app "$app" --arg version "$version" --arg code "$code" \
+    '(.app[] | select(.name == $app)) |= (.version = $version | .version_code = $code)' \
+    "$MATRIX" > "$tmp"
+  mv "$tmp" "$MATRIX"
 }
 
 # File the notification issue and close the earlier one for the same app.
@@ -187,7 +171,7 @@ for app in "${APPS[@]}"; do
   fi
   bump_matrix "$app" "$new_version" "$new_code"
 
-  git -C "$ROOT" add vendor/SHA256SUMS .github/workflows/build.yml
+  git -C "$ROOT" add vendor/SHA256SUMS vendor/versions.json
   git -C "$ROOT" commit --signoff \
     -m "build: bump $title to $new_version" \
     -m "APKPure serves $new_version (version code $new_code) for $package. vendor/$app/ and its lines in vendor/SHA256SUMS are refreshed and the matrix builds the new version from now on." \

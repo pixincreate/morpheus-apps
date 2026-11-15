@@ -42,8 +42,27 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    name: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the build matrix
+        id: matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          value="$(jq -c . vendor/versions.json)"
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
   build:
     name: build-${{ matrix.app.name }}
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -53,26 +72,11 @@ jobs:
       cancel-in-progress: false
 
     strategy:
-      # One app failing must not lose the other app's build.
+      # One app failing must not lose the other app's build. The watch writes
+      # the app list to vendor/versions.json, so a bump does not touch this
+      # workflow and the workflow token can push it.
       fail-fast: false
-      matrix:
-        app:
-          - name: ather
-            title: Ather
-            package: com.athermobileapp
-            version: "13.5.1"
-            version_code: "324"
-            # Explicit: the maintainer's untouched APKs are named config.*.apk.
-            splits: config.arm64_v8a config.en config.mdpi
-          - name: nothingx
-            title: Nothing X
-            package: com.nothing.smartcenter
-            version: "3.8.0"
-            version_code: "3080004"
-            # Nothing X ships a base APK plus many config splits under names the
-            # vendor bundle decides. scripts/build.sh discovers every *.apk in
-            # vendor/nothingx/ that is not the base APK.
-            splits: ""
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout repository

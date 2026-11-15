@@ -21,7 +21,6 @@ permissions:
   contents: write # push the bump commit
   issues: write # file the notification issue
   actions: write # dispatch the build
-  workflows: write # update .github/workflows/build.yml in the bump commit
 
 concurrency:
   group: watch
