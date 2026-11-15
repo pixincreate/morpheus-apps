@@ -4,16 +4,16 @@
       "name": "ather",
       "title": "Ather",
       "package": "com.athermobileapp",
-      "version": "13.5.1",
-      "version_code": "324",
+      "version": "13.6.0",
+      "version_code": "327",
       "splits": "config.arm64_v8a config.en config.mdpi"
     },
     {
       "name": "nothingx",
       "title": "Nothing X",
       "package": "com.nothing.smartcenter",
-      "version": "3.8.0",
-      "version_code": "3080004",
+      "version": "3.10.2",
+      "version_code": "3100201",
       "splits": ""
     }
   ]
