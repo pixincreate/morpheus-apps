@@ -30,6 +30,13 @@ DRY_RUN="${DRY_RUN:-}"
 info() { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 
+# Record an app that could not be resolved or fetched. The loop continues so the
+# other apps still bump, and the run fails after the push with the full list.
+mark_failed() { # $1 app, $2 reason
+  warn "$1: $2; failing the run"
+  failed="${failed}${1} "
+}
+
 # Issue operations use ISSUE_TOKEN when it is set. The workflow token pushes the
 # commit and dispatches the build, so a fine-grained PAT needs Issues only.
 issue_gh() {
@@ -130,6 +137,7 @@ EOF
 
 read -r -a APPS <<<"$(app_list | tr '\n' ' ')"
 bumps=""
+failed=""
 
 for app in "${APPS[@]}"; do
   [ -n "$app" ] || continue
@@ -141,14 +149,14 @@ for app in "${APPS[@]}"; do
   info "$app: the matrix pins $version ($code)"
 
   if ! latest="$(node "$FETCH" "$app" --latest-version)"; then
-    warn "$app: could not read the latest version, skipping"
+    mark_failed "$app" "could not read the latest version"
     continue
   fi
   new_version="$(printf '%s\n' "$latest" | sed -n 's/^version=//p' | tail -1)"
   new_code="$(printf '%s\n' "$latest" | sed -n 's/^versionCode=//p' | tail -1)"
 
   if [ -z "$new_version" ] || [ -z "$new_code" ]; then
-    warn "$app: the latest download declared no version, skipping"
+    mark_failed "$app" "the latest download declared no version"
     continue
   fi
   if [ "$new_version" = "$version" ] && [ "$new_code" = "$code" ]; then
@@ -162,10 +170,13 @@ for app in "${APPS[@]}"; do
     continue
   fi
 
-  node "$FETCH" "$app" "$new_version" "$new_code"
+  if ! node "$FETCH" "$app" "$new_version" "$new_code"; then
+    mark_failed "$app" "could not fetch the APKs"
+    continue
+  fi
   refresh_checksums "$app"
   if ! APP="$app" APP_PACKAGE="$package" bash "$ROOT/scripts/verify-vendor-apks.sh"; then
-    warn "$app: the fetched APKs failed verification, leaving the matrix alone"
+    mark_failed "$app" "the fetched APKs failed verification"
     git -C "$ROOT" checkout -- vendor/SHA256SUMS
     continue
   fi
@@ -183,12 +194,20 @@ for app in "${APPS[@]}"; do
 done
 
 if [ -z "$bumps" ]; then
+  if [ -n "$failed" ]; then
+    printf '::error::Could not resolve or fetch: %s\n' "${failed% }"
+    exit 1
+  fi
   info "every app in the matrix is up to date"
   exit 0
 fi
 
 if [ -n "$DRY_RUN" ]; then
   info "dry run: would push the bumps and dispatch the build"
+  if [ -n "$failed" ]; then
+    printf '::error::Could not resolve or fetch: %s\n' "${failed% }"
+    exit 1
+  fi
   exit 0
 fi
 
@@ -206,3 +225,8 @@ for record in "${records[@]}"; do
   IFS='|' read -r app title version code sha <<<"$record"
   file_issue "$app" "$title" "$version" "$code" "$sha" "$run_url"
 done
+
+if [ -n "$failed" ]; then
+  printf '::error::Could not resolve or fetch: %s\n' "${failed% }"
+  exit 1
+fi

@@ -39,8 +39,8 @@ For each app it does this:
 6. Signs the merged APK with `scripts/sign-all.sh`.
    The workflow decodes `KEYSTORE_BASE64` to a temporary file with mode 600 and
    deletes it in an `always()` step.
-7. Publishes the release `ather-13.5.1` with the asset
-   `morpheus-ather-13.5.1.apk` through `ncipollo/release-action`.
+7. Publishes the release `ather-13.6.0` with the asset
+   `morpheus-ather-13.6.0.apk` through `ncipollo/release-action`.
    A rerun replaces the asset and the notes in the same release.
 8. Reports a failure as an issue in the repository that needs the fix with
    `scripts/report-failure.sh`. Patch and bundle failures go to
@@ -63,8 +63,8 @@ Point both at the same repository URL and separate them with the title filter.
 | APK filter RegEx | `ather` | `nothingx` |
 | Include prereleases | off | off |
 
-The release title carries the version (`Ather 13.5.1`), and the version extraction
-reads it into the plain `13.5.1` shape that Obtainium compares.
+The release title carries the version (`Ather 13.6.0`), and the version extraction
+reads it into the plain `13.6.0` shape that Obtainium compares.
 The title filter and the APK filter keep the other app's release out.
 A new released version makes Obtainium report an update, and every build is signed
 with the same key, so the update installs over the previous build.
@@ -136,7 +136,7 @@ Create one private release per app and version, then attach the untouched APKs.
 The workflow downloads them with:
 
 ```bash
-gh release download vendor/ather/13.5.1 -p '*.apk' -D vendor/ather/
+gh release download vendor/ather/13.6.0 -p '*.apk' -D vendor/ather/
 ```
 
 Name the base APK after its package and keep the original split names:
@@ -159,9 +159,9 @@ mv vendor/ather/base.apk vendor/ather/com.athermobileapp.apk
 ### Create the vendor release
 
 ```bash
-gh release create vendor/ather/13.5.1 -R pixincreate/morpheus-apps \
-  --title "Ather 13.5.1 vendor APKs" \
-  --notes "Untouched Ather 13.5.1 base APK and config splits." \
+gh release create vendor/ather/13.6.0 -R pixincreate/morpheus-apps \
+  --title "Ather 13.6.0 vendor APKs" \
+  --notes "Untouched Ather 13.6.0 base APK and config splits." \
   --latest=false \
   vendor/ather/com.athermobileapp.apk \
   vendor/ather/config.arm64_v8a.apk \
@@ -169,7 +169,7 @@ gh release create vendor/ather/13.5.1 -R pixincreate/morpheus-apps \
   vendor/ather/config.mdpi.apk
 ```
 
-Use the same shape for Nothing X with tag `vendor/nothingx/3.8.0`.
+Use the same shape for Nothing X with tag `vendor/nothingx/3.10.3`.
 For an APKPure `.xapk`, `unzip` it, rename the base APK to the package name, and
 keep every config split it contains.
 `scripts/fetch-vendor-apks.mjs` normalises the base name and keeps every `*.apk`
@@ -216,11 +216,11 @@ gh workflow run watch.yml -R pixincreate/morpheus-apps
 ## Install a build on the phone
 
 ```bash
-gh release download ather-13.5.1 -R pixincreate/morpheus-apps -D builds --clobber
-adb install builds/morpheus-ather-13.5.1.apk
+gh release download ather-13.6.0 -R pixincreate/morpheus-apps -D builds --clobber
+adb install builds/morpheus-ather-13.6.0.apk
 ```
 
-For Nothing X, use the tag `nothingx-3.8.0` and its asset.
+For Nothing X, use the tag `nothingx-3.10.3` and its asset.
 
 ## Web fallback for vendor APKs
 
@@ -234,8 +234,8 @@ https://d.apkpure.com/b/XAPK/<package>?versionCode=<code>&nc=<abi>&sv=<sdk>
 Positional arguments override the defaults table:
 
 ```bash
-node scripts/fetch-vendor-apks.mjs ather 13.5.1 324 arm64-v8a 32
-node scripts/fetch-vendor-apks.mjs nothingx 3.8.0 3080004 arm64-v8a 32
+node scripts/fetch-vendor-apks.mjs ather 13.6.0 327 arm64-v8a 32
+node scripts/fetch-vendor-apks.mjs nothingx 3.10.3 3100311 arm64-v8a 32
 node scripts/fetch-vendor-apks.mjs all
 ```
 

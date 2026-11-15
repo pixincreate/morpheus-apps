@@ -48,8 +48,8 @@
 //
 // Defaults:
 //   app        package                    version  versionCode  abi          sdk
-//   ather      com.athermobileapp          13.5.0   321          arm64-v8a    32
-//   nothingx   com.nothing.smartcenter     3.8.0    3080004      arm64-v8a    32
+//   ather      com.athermobileapp          13.6.0   327          arm64-v8a    32
+//   nothingx   com.nothing.smartcenter     3.10.3   3100311      arm64-v8a    32
 //
 // Environment:
 //   PATCHRIGHT_CHANNEL  force a browser channel for patchright, for example
@@ -81,15 +81,15 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const APPS = {
   ather: {
     package: "com.athermobileapp",
-    version: "13.5.0",
-    versionCode: "321",
+    version: "13.6.0",
+    versionCode: "327",
     abi: "arm64-v8a",
     sdk: "32",
   },
   nothingx: {
     package: "com.nothing.smartcenter",
-    version: "3.8.0",
-    versionCode: "3080004",
+    version: "3.10.3",
+    versionCode: "3100311",
     abi: "arm64-v8a",
     sdk: "32",
   },
