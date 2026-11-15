@@ -134,8 +134,10 @@ function browserChannel() {
 
 // Launch a headed, persistent browser context and wait for the download the
 // endpoint triggers. Headed is required: headless gets the challenge loop.
+// APKPure sometimes redirects to the download endpoint without firing the
+// download event, so retry with a fresh profile before failing the workflow.
 async function downloadXapk(url, out) {
-  const profile = mkdtempSync(join(tmpdir(), "fetch-vendor-apks-"));
+  const attempts = 3;
   const options = {
     headless: false,
     viewport: null,
@@ -150,23 +152,46 @@ async function downloadXapk(url, out) {
   console.log(
     `launching patchright with ${channel ? `the ${channel} channel` : "the bundled Chromium"}`,
   );
-  console.log(`downloading ${url}`);
-  const context = await chromium.launchPersistentContext(profile, options);
-  try {
-    const page = context.pages()[0] ?? (await context.newPage());
-    const [download] = await Promise.all([
-      page.waitForEvent("download", { timeout: 120000 }),
-      page.goto(url).catch(() => {}),
-    ]);
-    const failure = await download.failure();
-    if (failure) {
-      throw new Error(`the download failed: ${failure}`);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const profile = mkdtempSync(join(tmpdir(), "fetch-vendor-apks-"));
+    let context;
+    rmSync(out, { force: true });
+    try {
+      console.log(
+        `downloading ${url}${attempt > 1 ? ` (attempt ${attempt}/${attempts})` : ""}`,
+      );
+      context = await chromium.launchPersistentContext(profile, options);
+      const page = context.pages()[0] ?? (await context.newPage());
+      const [download] = await Promise.all([
+        page.waitForEvent("download", { timeout: 120000 }),
+        page.goto(url).catch(() => {}),
+      ]);
+      const failure = await download.failure();
+      if (failure) {
+        throw new Error(`the download failed: ${failure}`);
+      }
+      await download.saveAs(out);
+      assertZipMagic(out);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `download attempt ${attempt}/${attempts} failed: ${error.message}`,
+      );
+      if (attempt < attempts) {
+        const delay = 5000 * attempt;
+        console.error(`retrying in ${delay / 1000} seconds`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    } finally {
+      if (context) {
+        await context.close().catch(() => {});
+      }
+      rmSync(profile, { recursive: true, force: true });
     }
-    await download.saveAs(out);
-  } finally {
-    await context.close().catch(() => {});
-    rmSync(profile, { recursive: true, force: true });
   }
+  throw lastError;
 }
 
 function assertZipMagic(file) {
